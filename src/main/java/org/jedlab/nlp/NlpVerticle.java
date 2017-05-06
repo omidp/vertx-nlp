@@ -74,6 +74,8 @@ public class NlpVerticle extends AbstractVerticle
             String parsedContent = cp.parse();
             LuceneManager lm = new LuceneManager();
             lm.index(parsedContent);
+            System.out.println("process finished");
+            urlResponseFuture.complete();
         });
     }
 
@@ -247,8 +249,8 @@ public class NlpVerticle extends AbstractVerticle
             System.out.println("fetching content from : " + url);
             if (url != null && url.length() > 0)
             {
-                WebClientOptions options = new WebClientOptions().setUserAgent("Mozila");
-                options.setKeepAlive(false);
+                WebClientOptions options = new WebClientOptions().setUserAgent("Mozilla/5.0").setUserAgentEnabled(true);
+                options.setKeepAlive(true);
                 options.setFollowRedirects(true);
                 final WebClient client = WebClient.create(rc.vertx(), options);
                 client.getAbs(url).send(future.completer());
