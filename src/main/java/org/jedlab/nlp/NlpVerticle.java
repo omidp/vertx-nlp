@@ -48,6 +48,8 @@ public class NlpVerticle extends AbstractVerticle
 
     public static final String USER_HOME = System.getProperty("user.home");
     public static final String INDEX_REPOSITORY = USER_HOME + "/search_index";
+    
+    public static final String URLCONTENT = "urlContent";
 
     @Override
     public void start() throws Exception
@@ -60,21 +62,18 @@ public class NlpVerticle extends AbstractVerticle
             System.out.println("directory already created : " + rh.succeeded());
         });
         Router router = Router.router(vertx);
-        Future<HttpResponse<Buffer>> urlResponseFuture = Future.future();
-        UrlContentHandler urlContentHandler = new UrlContentHandler(urlResponseFuture);
-        WordsHandler wordsHandler = new WordsHandler();
+        //
+        UrlContentHandler urlContentHandler = new UrlContentHandler();
+        TikaContentHandler tikaContentHandler = new TikaContentHandler();
+        LuceneContentHandler luceneContentHandler = new LuceneContentHandler();
         router.route("/parse").handler(urlContentHandler::handle);
+        router.route("/parse").handler(tikaContentHandler::handle);
+        router.route("/parse").handler(luceneContentHandler::handle);
+        //
+        WordsHandler wordsHandler = new WordsHandler();
         router.route("/find/:words").handler(wordsHandler::handle);
         vertx.createHttpServer().requestHandler(router::accept).listen(8585);
         //
-        urlResponseFuture.setHandler(h ->
-        {
-            String content = h.result().bodyAsString();
-            final ContentParser cp = new ContentParser(content);
-            String parsedContent = cp.parse();
-            LuceneManager lm = new LuceneManager();
-            lm.index(parsedContent);
-        });
     }
 
     public static class WordsHandler
@@ -171,10 +170,10 @@ public class NlpVerticle extends AbstractVerticle
 
     }
 
-    public static class LuceneManager
+    public static class LuceneContentHandler
     {
 
-        public void index(String content)
+        public void handle(RoutingContext rc)
         {
             try
             {
@@ -185,6 +184,7 @@ public class NlpVerticle extends AbstractVerticle
 
                 IndexWriter indexWriter = new IndexWriter(new NIOFSDirectory(new File(INDEX_REPOSITORY)), conf);
                 Document document = new Document();
+                String content = rc.get(URLCONTENT);
                 Reader reader = new StringReader(content);
                 document.add(new TextField("text", reader));
                 indexWriter.addDocument(document);
@@ -196,10 +196,11 @@ public class NlpVerticle extends AbstractVerticle
             {
                 e.printStackTrace();
             }
+            System.out.println("lucene is ready");
         }
     }
 
-    public static class ContentParser
+    public static class TikaContentHandler
     {
 
         private static final BodyContentHandler handler = new BodyContentHandler();
@@ -207,26 +208,20 @@ public class NlpVerticle extends AbstractVerticle
         private static final ParseContext pcontext = new ParseContext();
 
         private static final HtmlParser htmlparser = new HtmlParser();
-        private String content;
 
-        public ContentParser(String content)
+        public void handle(RoutingContext rc)
         {
-            this.content = content;
-        }
-
-        public String parse()
-        {
-
+            String content = rc.get(URLCONTENT);
             try
             {
                 htmlparser.parse(new ByteArrayInputStream(content.getBytes("UTF-8")), handler, metadata, pcontext);
-                return handler.toString();
+                rc.put(URLCONTENT, handler.toString());
             }
             catch (IOException | SAXException | TikaException e)
             {
                 System.out.println(e.getMessage());
             }
-            return "";
+            rc.next();
         }
 
     }
@@ -234,12 +229,6 @@ public class NlpVerticle extends AbstractVerticle
     public static class UrlContentHandler
     {
 
-        private final Future<HttpResponse<Buffer>> future;
-
-        public UrlContentHandler(Future<HttpResponse<Buffer>> future)
-        {
-            this.future = future;
-        }
 
         private void handle(RoutingContext rc)
         {
@@ -251,13 +240,16 @@ public class NlpVerticle extends AbstractVerticle
                 options.setKeepAlive(false);
                 options.setFollowRedirects(true);
                 final WebClient client = WebClient.create(rc.vertx(), options);
-                client.getAbs(url).send(future.completer());
-                // client.get(80, url,"/").send(ar->{
-                // System.out.println(ar.result().bodyAsString());
-                // });
+                client.getAbs(url).send(ar->{
+                    if(ar.succeeded())
+                    {
+                        rc.put(URLCONTENT, ar.result().bodyAsString());
+                        rc.next();
+                    }
+                });
             }
             rc.response().end("process completed");
-
+            
         }
 
     }
