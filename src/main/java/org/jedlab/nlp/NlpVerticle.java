@@ -74,6 +74,7 @@ public class NlpVerticle extends AbstractVerticle
         router.route("/find/:words").handler(wordsHandler::handle);
         vertx.createHttpServer().requestHandler(router::accept).listen(8585);
         //
+        System.out.println("process finished");
     }
 
     public static class WordsHandler
@@ -236,8 +237,8 @@ public class NlpVerticle extends AbstractVerticle
             System.out.println("fetching content from : " + url);
             if (url != null && url.length() > 0)
             {
-                WebClientOptions options = new WebClientOptions().setUserAgent("Mozila");
-                options.setKeepAlive(false);
+                WebClientOptions options = new WebClientOptions().setUserAgent("Mozilla/5.0").setUserAgentEnabled(true);
+                options.setKeepAlive(true);
                 options.setFollowRedirects(true);
                 final WebClient client = WebClient.create(rc.vertx(), options);
                 client.getAbs(url).send(ar->{
